@@ -23,6 +23,8 @@ const exerciseSchema = new mongoose.Schema({
 
 let Exercise = mongoose.model("Exercise", exerciseSchema);
 
+const TIMEOUT = 10000;
+
 app.use(bodyParser.urlencoded({ extended: false }), function (req, res, next) {
   console.log(req.method + ' ' + req.path + ' - ' + req.ip);
   next();
@@ -34,6 +36,13 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
+const findOneByName = (name, done) => {
+  Exercise.findOne({"username": name}, function(err, personFound) {
+    if (err) return console.log(err);
+    done(null, personFound);
+  });
+};
+
 //create user
 app.route("/api/users")
   .get(function (req, res) {
@@ -44,16 +53,28 @@ app.route("/api/users")
       })
   })
 
-  .post(function (req, res) {
-    let e = new Exercise({ username: req.body.username});
-    e.save(function (err, data) {
-      if (err) return console.error(err);
+  .post(function (req, res, next) {
+    let t = setTimeout(() => {
+      next({ message: "timeout" });
+    }, TIMEOUT);
+    let e = new Exercise(req.body);
+    e.save(function (err, pers) {
+      if (err) {
+        return next(err);
+      }
+      findOneByName(pers.username, function (err, data) {
+        clearTimeout(t);
+        if (err) {
+          return next(err);
+        }
+        if (!data) {
+          console.log("Missing `done()` argument");
+          return next({ message: "Missing callback argument" });
+        }
+        res.json({username: data.username, _id: data._id});
+        e.remove();
+      });
     });
-
-    Exercise.findOne({ username: req.body.username }, function (err, personFound) {
-        if (err) return console.log(err);
-        res.json({username: personFound.username, _id: personFound._id});
-      })
   });
 
 app.post('/api/users/:_id/exercises', function (req, res) {
