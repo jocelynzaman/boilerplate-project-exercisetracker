@@ -13,15 +13,10 @@ const exerciseSchema = new mongoose.Schema({
     "type": String,
     "required": true
   },
-  "count": Number,
-  "log": [{
-    "description": String,
-    "duration": Number,
-    "date": String,
-  }]
+  "log": [Object]
 });
 
-let Exercise = mongoose.model("Exercise", exerciseSchema);
+let Exercise = mongoose.model("exercise_tracker", exerciseSchema);
 
 const TIMEOUT = 10000;
 
@@ -37,17 +32,35 @@ app.get('/', (req, res) => {
 });
 
 const findOneByName = (name, done) => {
-  Exercise.findOne({"username": name}, function(err, personFound) {
+  Exercise.findOne({ "username": name }, function (err, personFound) {
     if (err) return console.log(err);
     done(null, personFound);
   });
+};
+
+const findEditThenSave = (personId, description, duration, date, done) => {
+  Exercise.findById(personId, function (err, personFound) {
+    if (err) return console.log(err);
+    console.log(personId + ' ' + personFound);
+    let NEW_LOG = {
+      description: description, 
+      duration: Number(duration), 
+      date: date.toDateString()
+    }
+    personFound.log.push(NEW_LOG);
+    personFound.save(function (err, updatedPerson) {
+      if (err) return console.log(err);
+      // Person.markModified('edited-field');
+      done(null, updatedPerson);
+    })
+  })
 };
 
 //create user
 app.route("/api/users")
   .get(function (req, res) {
     Exercise.find()
-      .select({ username: 1 }/*, {_id: 1}, {description: 0}, {date: 0}, {duration: 0}, {count: 0}, {log: 0}*/).exec(function (err, personFound) {
+      .select({ username: 1 }).exec(function (err, personFound) {
         if (err) return console.log(err);
         res.json(personFound);
       })
@@ -71,32 +84,38 @@ app.route("/api/users")
           console.log("Missing `done()` argument");
           return next({ message: "Missing callback argument" });
         }
-        res.json({username: data.username, _id: data._id});
-        e.remove();
+        res.json({ username: data.username, _id: data._id });
+        console.log(data);
       });
     });
   });
 
-app.post('/api/users/:_id/exercises', function (req, res) {
-  var _id = req.params._id;
-  var date = req.params.date;
-  var duration = req.params.duration;
-  var description = req.params.description;
-
-    Exercise.updateOne({ _id: req.params._id }, 
-      {$push: {log: {description: description, duration: duration, date: date}}, $inc: {count: 1}});
-    Exercise.find({ _id: req.params._id })
-    .limit(1)
-    .select({username: 1 , count: 1, log: 1}).exec(function (err, personFound) {
-        if (err) return console.log(err);
-        res.json(personFound[0]/*description: personFound[0].log[0].description, duration: personFound[0].log[0].duration, date: personFound[0].log[0].date,*/ );
-      });
-
-  // res.json({ _id: id }, { date: date }, { duration: duration }, { description: description });
+app.post('/api/users/:_id/exercises', function (req, res, next) {
+  let t = setTimeout(() => {
+    next({ message: "timeout" });
+  }, TIMEOUT);
+  // console.log(req.body.date);
+  date = (req.body.date.trim() === " ") ? new Date(req.body.date): new Date();
+  findEditThenSave(req.params._id, req.body.description, req.body.duration, date, function (err, data) {
+    clearTimeout(t);
+    if (err) {
+      return next(err);
+    }
+    if (!data) {
+      console.log("Missing `done()` argument");
+      return next({ message: "Missing callback argument" });
+    }
+    var logIndex = data.log.length - 1;
+    res.json({_id: data._id, username: data.username, date: data.log[logIndex].date, duration: data.log[logIndex].duration, description: data.log[logIndex].description});
+  });
 });
 
 app.get('/api/users/:_id/logs', function (req, res) {
-
+  Exercise.findById(req.params._id, function (err, personFound) {
+    if (err) return console.log(err);
+    console.log(personFound);
+    res.json({_id: personFound._id, username: personFound.username, count: personFound.log.length, log: personFound.log})
+  })
 })
 
 const listener = app.listen(process.env.PORT || 3000, () => {
